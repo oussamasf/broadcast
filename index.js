@@ -1,47 +1,33 @@
 const express = require("express");
-const app = express();
-const server = require("http").createServer(app);
-const io = require("socket.io")(server);
-const { EventEmitter } = require("events");
-const pm2 = require("pm2");
+const { graphqlHTTP } = require("express-graphql");
+const { buildSchema } = require("graphql");
 
-const eventEmitter = new EventEmitter();
-const channel = "myChannel";
+// Construct a schema, using GraphQL schema language
+const schema = buildSchema(`
+type Query {
+  rollDice(numDice: Int!, numSides: Int): [Int]
+}
+`);
 
-// Listen for the custom event and broadcast it
-eventEmitter.on(channel, (data) => {
-  console.log("Event triggered:", data);
-  io.emit(channel, data);
-});
-
-// Start the PM2 buss
-pm2.connect((err) => {
-  if (err) {
-    console.error(err);
-    process.exit(1);
-  }
-
-  pm2.launchBus((errLb, bus) => {
-    if (errLb) {
-      console.error(errLb);
-      process.exit(1);
+// The root provides a resolver function for each API endpoint
+const root = {
+  rollDice: ({ numDice, numSides }) => {
+    const output = [];
+    for (let i = 0; i < numDice; i++) {
+      output.push(1 + Math.floor(Math.random() * (numSides || 6)));
     }
+    return output;
+  },
+};
 
-    bus.on(channel, (data) => {
-      console.log("Event received:", data);
-      eventEmitter.emit(channel, data);
-    });
-  });
-});
-
-// Add a sample route that emits the event
-app.get("/", (req, res) => {
-  const data = { message: "Hello World!" };
-  eventEmitter.emit(channel, data);
-  res.send("Event emitted!");
-});
-
-// Start the server
-server.listen(8346, () => {
-  console.log("Server started on port 3000");
-});
+const app = express();
+app.use(
+  "/graphql",
+  graphqlHTTP({
+    schema: schema,
+    rootValue: root,
+    graphiql: true,
+  })
+);
+app.listen(4000);
+console.log("Running a GraphQL API server at localhost:4000/graphql");
